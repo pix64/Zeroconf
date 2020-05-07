@@ -175,14 +175,46 @@ namespace Zeroconf
                                                          int retries = 2,
                                                          int retryDelayMilliseconds = 2000)
         {
-
-
-
             var inner = Resolve(protocols, scanTime, retries, retryDelayMilliseconds);
-
-
-            return inner.Repeat().Distinct();
+            return inner.Repeat();
             
+        }
+
+        /// <summary>
+        ///     Resolves available ZeroConf distinct services continuously until disposed
+        /// </summary>
+        /// <param name="scanTime">Default is 2 seconds</param>
+        /// <param name="protocols"></param>
+        /// <param name="retries">If the socket is busy, the number of times the resolver should retry</param>
+        /// <param name="retryDelayMilliseconds">The delay time between retries</param>
+        /// <returns></returns>
+        public static IObservable<IZeroconfHost> ResolveContinuousDistinct(IEnumerable<string> protocols,
+                                                         TimeSpan scanTime = default(TimeSpan),
+                                                         int retries = 2,
+                                                         int retryDelayMilliseconds = 2000)
+        {
+            var inner = Resolve(protocols, scanTime, retries, retryDelayMilliseconds);
+            return inner.Repeat().Distinct();
+
+        }
+
+
+        /// <summary>
+        ///     Resolves available ZeroConf services continuously until disposed
+        /// </summary>
+        public static IObservable<IZeroconfHost> ResolveContinuous(ResolveOptions options)
+        {
+            var inner = Resolve(options);
+            return inner.Repeat();
+        }
+
+        /// <summary>
+        ///     Resolves available ZeroConf distinct services continuously until disposed
+        /// </summary>
+        public static IObservable<IZeroconfHost> ResolveContinuousDistinct(ResolveOptions options)
+        {
+            var inner = Resolve(options);
+            return inner.Repeat().Distinct();
         }
 
         /// <summary>
@@ -201,6 +233,30 @@ namespace Zeroconf
         }
 
         public static IObservable<DomainService> BrowseDomainsContinuous(TimeSpan scanTime = default(TimeSpan),
+                                                                             int retries = 2,
+                                                                             int retryDelayMilliseconds = 2000)
+        {
+            return BrowseDomains(scanTime, retries, retryDelayMilliseconds)
+                   .Repeat();
+        }
+
+        /// <summary>
+        ///     Resolves available ZeroConf distinct services continuously until disposed
+        /// </summary>
+        /// <param name="scanTime">Default is 2 seconds</param>
+        /// <param name="protocol"></param>
+        /// <param name="retries">If the socket is busy, the number of times the resolver should retry</param>
+        /// <param name="retryDelayMilliseconds">The delay time between retries</param>
+        public static IObservable<IZeroconfHost> ResolveContinuousDistinct(string protocol,
+                                                                   TimeSpan scanTime = default(TimeSpan),
+                                                                   int retries = 2,
+                                                                   int retryDelayMilliseconds = 2000)
+        {
+            return ResolveContinuousDistinct(new[] { protocol }, scanTime, retries, retryDelayMilliseconds);
+        }
+
+
+        public static IObservable<DomainService> BrowseDomainsContinuousDistinct(TimeSpan scanTime = default(TimeSpan),
                                                                              int retries = 2,
                                                                              int retryDelayMilliseconds = 2000)
         {

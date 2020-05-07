@@ -82,27 +82,34 @@ namespace Zeroconf
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
             Action<string, Response> wrappedAction = null;
-            
+
+            bool SameDomain(string protocol, string domainName)
+            {
+                return domainName != null && domainName.EndsWith(protocol, StringComparison.OrdinalIgnoreCase);
+            }
+
             if (callback != null)
             {
                 wrappedAction = (address, resp) =>
                 {
                     var zc = ResponseToZeroconf(resp, address);
-                    if (zc.Services.Any(s => options.Protocols.Contains(s.Key)))
+                    if (zc.Services.Any(s => options.Protocols.Contains(s.Key)) || options.Protocols.Any(p => zc.DomainNames.Any(d => SameDomain(p, d))))
                     {
                         callback(zc);
                     }
                 };
             }
-            
+
             var dict = await ResolveInternal(options,
                                              wrappedAction,
                                              cancellationToken)
                                  .ConfigureAwait(false);
 
             return dict.Select(pair => ResponseToZeroconf(pair.Value, pair.Key))
-                       .Where(zh => zh.Services.Any(s => options.Protocols.Contains(s.Key))) // Ensure we only return records that have matching services
-                       .ToList();
+           .Where(zh =>
+                zh.Services.Any(s => options.Protocols.Contains(s.Key)) || options.Protocols.Any(p => SameDomain(p, zh.DomainName)))
+           // Ensure we only return records that have matching services or domain names
+           .ToList();
         }
 
         /// <summary>

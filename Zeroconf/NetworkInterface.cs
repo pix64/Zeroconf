@@ -12,10 +12,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-
 namespace Zeroconf
 {
-    class NetworkInterface : INetworkInterface
+    class NetworkInterface
     {
         public async Task NetworkRequestAsync(byte[] requestBytes,
                                               TimeSpan scanTime,
@@ -37,7 +36,7 @@ namespace Zeroconf
         }
 
 
-        async Task NetworkRequestAsync(byte[] requestBytes,
+        public async Task NetworkRequestAsync(byte[] requestBytes,
                                               TimeSpan scanTime,
                                               int retries,
                                               int retryDelayMilliseconds,
@@ -48,8 +47,8 @@ namespace Zeroconf
             // http://stackoverflow.com/questions/2192548/specifying-what-network-interface-an-udp-multicast-should-go-to-in-net
 
             // Xamarin doesn't support this
-            //if (!adapter.GetIPProperties().MulticastAddresses.Any())
-            //    return; // most of VPN adapters will be skipped
+            if (!adapter.GetIPProperties().MulticastAddresses.Any())
+                return; // most of VPN adapters will be skipped
 
             if (!adapter.SupportsMulticast)
                 return; // multicast is meaningless for this type of connection
@@ -83,13 +82,11 @@ namespace Zeroconf
                     {
                         var socket = client.Client;
 
-                        if (socket.IsBound) continue;
+                        if (socket == null || socket.IsBound) continue;
 
                         socket.SetSocketOption(SocketOptionLevel.IP,
                                                      SocketOptionName.MulticastInterface,
                                                      IPAddress.HostToNetworkOrder(ifaceIndex));
-
-
 
                         client.ExclusiveAddressUse = false;
                         socket.SetSocketOption(SocketOptionLevel.Socket,
@@ -111,9 +108,7 @@ namespace Zeroconf
                         var multOpt = new MulticastOption(multicastAddress, ifaceIndex);
                         socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership, multOpt);
 
-
                         Debug.WriteLine("Bound to multicast address");
-
 
                         // Start a receive loop
                         var shouldCancel = false;
@@ -151,10 +146,13 @@ namespace Zeroconf
 
                         Volatile.Write(ref shouldCancel, true);
 
-                        ((IDisposable)client).Dispose();
+                        try
+                        {
+                            ((IDisposable)client).Dispose();
+                        }
+                        catch (ObjectDisposedException) { }
 
                         Debug.WriteLine("Done Scanning");
-
 
                         await recTask.ConfigureAwait(false);
 
@@ -179,7 +177,7 @@ namespace Zeroconf
         public Task ListenForAnnouncementsAsync(Action<AdapterInformation, string, byte[]> callback, CancellationToken cancellationToken)
         {
             return Task.WhenAll(System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
-                                     // .Where(a => a.GetIPProperties().MulticastAddresses.Any()) // Xamarin doesn't support this
+                                      .Where(a => a.GetIPProperties().MulticastAddresses.Any()) // Xamarin doesn't support this
                                       .Where(a => a.SupportsMulticast)
                                       .Where(a => a.OperationalStatus == OperationalStatus.Up)
                                       .Where(a => a.NetworkInterfaceType != NetworkInterfaceType.Loopback)

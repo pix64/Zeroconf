@@ -18,6 +18,16 @@ namespace Zeroconf
         string DisplayName { get; }
 
         /// <summary>
+        ///     Domain Name
+        /// </summary>
+        string DomainName { get; }
+
+        /// <summary>
+        ///     Domain Name (alias for DomainNames.First())
+        /// </summary>
+        IReadOnlyList<string> DomainNames { get; }
+
+        /// <summary>
         ///     Id, possibly different than the Name
         /// </summary>
         string Id { get; }
@@ -32,11 +42,20 @@ namespace Zeroconf
         /// </summary>
         IReadOnlyList<string> IPAddresses { get; }
 
-
         /// <summary>
         ///     Services offered by this host (based on services queried for)
         /// </summary>
         IReadOnlyDictionary<string, IService> Services { get; }
+
+        /// <summary>
+        //      TXT Records
+        /// </summary>
+        IReadOnlyDictionary<string, ITextRecord> TextRecords { get; }
+
+        /// <summary>
+        ///     TXT Record (alias for TextRecords.First())
+        /// </summary>
+        ITextRecord TextRecord { get; }
     }
 
     /// <summary>
@@ -58,12 +77,24 @@ namespace Zeroconf
         /// Time-to-live
         /// </summary>
         int Ttl { get; }
+    }
+
+    public interface ITextRecord
+    {
+        /// <summary>
+        ///     Name
+        /// </summary>
+        string Name { get; }
 
         /// <summary>
-        ///     Properties of the object. Most services have a single set of properties, but some services
-        ///     may return multiple sets of properties
+        /// Time-to-live
         /// </summary>
-        IReadOnlyList<IReadOnlyDictionary<string, string>> Properties { get; }
+        int Ttl { get; }
+
+        /// <summary>
+        /// TXT record properties
+        /// </summary>
+        IReadOnlyDictionary<string, string> Properties { get; }
     }
 
     /// <summary>
@@ -72,6 +103,8 @@ namespace Zeroconf
     class ZeroconfHost : IZeroconfHost, IEquatable<ZeroconfHost>, IEquatable<IZeroconfHost>
     {
         readonly Dictionary<string, IService> services = new Dictionary<string, IService>();
+        readonly HashSet<string> domainNames = new HashSet<string>();
+        readonly Dictionary<string, ITextRecord> textRecords = new Dictionary<string, ITextRecord>();
 
         public bool Equals(IZeroconfHost other)
         {
@@ -108,11 +141,30 @@ namespace Zeroconf
         /// </summary>
         public IReadOnlyDictionary<string, IService> Services => services;
 
+        /// <summary>
+        ///     Domain Name
+        /// </summary>
+        public string DomainName => DomainNames?.FirstOrDefault();
+
+        /// <summary>
+        ///     Domain Names
+        /// </summary>
+        public IReadOnlyList<string> DomainNames => domainNames.ToList();
 
         /// <summary>
         ///     Display Name
         /// </summary>
         public string DisplayName { get; set; }
+
+        /// <summary>
+        ///     TextRecords
+        /// </summary>
+        public IReadOnlyDictionary<string, ITextRecord> TextRecords => textRecords;
+
+        /// <summary>
+        ///     TextRecord
+        /// </summary>
+        public ITextRecord TextRecord => textRecords.FirstOrDefault().Value;
 
         public override bool Equals(object obj)
         {
@@ -156,52 +208,71 @@ namespace Zeroconf
         {
             services[service.Name] = service ?? throw new ArgumentNullException(nameof(service));
         }
+
+        internal void AddDomainName(string domainName)
+        {
+            domainNames.Add(domainName ?? throw new ArgumentNullException(nameof(domainName)));
+        }
+
+        internal void AddTextRecord(ITextRecord textRecord)
+        {
+            textRecords[textRecord.Name] = textRecord ?? throw new ArgumentNullException(nameof(textRecord));
+        }
     }
 
-    class Service : IService
+    class TextRecord : ITextRecord
     {
-        readonly List<IReadOnlyDictionary<string, string>> properties = new List<IReadOnlyDictionary<string, string>>();
+        readonly Dictionary<string, string> properties = new Dictionary<string, string>();
 
         public string Name { get; set; }
-        public int Port { get; set; }
         public int Ttl { get; set; }
 
-        public IReadOnlyList<IReadOnlyDictionary<string, string>> Properties => properties;
+        public IReadOnlyDictionary<string, string> Properties => properties;
 
         public override string ToString()
         {
             var sb = new StringBuilder();
 
-            sb.Append($"Service: {Name} Port: {Port}, TTL: {Ttl}, PropertySets: {properties.Count}");
+            sb.Append($"Text: {Name}, TTL: {Ttl}, PropertySets: {properties.Count}");
 
             if (properties.Any())
             {
                 sb.AppendLine();
-                for (var i = 0; i < properties.Count; i++)
-                {
-                    sb.Append($"Begin Property Set #{i}");
-                    sb.AppendLine();
-                    sb.AppendLine("-------------------");
+                sb.Append($"Begin Property Set");
+                sb.AppendLine();
+                sb.AppendLine("-------------------");
 
-                    foreach (var kvp in properties[i])
-                    {
-                        sb.Append($"{kvp.Key} = {kvp.Value}");
-                        sb.AppendLine();
-                    }
-                    sb.AppendLine("-------------------");
+                foreach (var kvp in properties)
+                {
+                    sb.Append($"{kvp.Key} = {kvp.Value}");
+                    sb.AppendLine();
                 }
+                sb.AppendLine("-------------------");
             }
 
             return sb.ToString();
         }
 
-        internal void AddPropertySet(IReadOnlyDictionary<string, string> set)
+        internal void AddProperty(string key, string value)
         {
-            if (set == null)
-                throw new ArgumentNullException(nameof(set));
+            if (key is null)
+                throw new ArgumentNullException(nameof(key));
 
-            properties.Add(set);
+            properties.Add(key, value);
         }
+    }
 
+    class Service : IService
+    {
+        public string Name { get; set; }
+        public int Port { get; set; }
+        public int Ttl { get; set; }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.Append($"Service: {Name} Port: {Port}, TTL: {Ttl}");
+            return sb.ToString();
+        }
     }
 }

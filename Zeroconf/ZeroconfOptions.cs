@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Heijden.DNS;
 
 namespace Zeroconf
 {
@@ -11,7 +12,7 @@ namespace Zeroconf
         int retries;
 
         protected ZeroconfOptions(string protocol) :
-            this(new[] {protocol})
+            this(new[] { protocol })
         {
         }
 
@@ -22,7 +23,7 @@ namespace Zeroconf
             Retries = 2;
             RetryDelay = TimeSpan.FromSeconds(2);
             ScanTime = TimeSpan.FromSeconds(2);
-            ScanQueryType = ScanQueryType.Ptr;
+            ScanQueryTypes = new[] { ScanQueryType.Ptr };
         }
 
         public IEnumerable<string> Protocols { get; }
@@ -42,15 +43,27 @@ namespace Zeroconf
 
         public TimeSpan ScanTime { get; set; }
 
-        public ScanQueryType ScanQueryType { get; set; }
+        public ScanQueryType[] ScanQueryTypes { get; set; }
 
-        public bool AllowOverlappedQueries { get; set; }
+        public bool AllowOverlappedQueries { get; set; } = true;
+
+        public ScanClassType ScanClassType { get; set; }
+
+        public System.Net.NetworkInformation.NetworkInterface Adapter { get; set; }
     }
 
     public enum ScanQueryType
     {
         Ptr,
-        Any
+        Srv,
+        Txt,
+        Any,
+    }
+
+    public enum ScanClassType
+    {
+        Any,
+        In
     }
 
     public class BrowseDomainsOptions : ZeroconfOptions

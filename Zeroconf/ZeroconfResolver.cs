@@ -8,7 +8,6 @@ using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Heijden.DNS;
-using Type = Heijden.DNS.Type;
 
 namespace Zeroconf
 {
@@ -19,7 +18,7 @@ namespace Zeroconf
     {
         static readonly AsyncLock ResolverLock = new AsyncLock();
 
-        static readonly INetworkInterface NetworkInterface = new NetworkInterface();
+        static readonly NetworkInterface NetworkInterface = new NetworkInterface();
 
         static IEnumerable<string> BrowseResponseParser(Response response)
         {
@@ -46,7 +45,8 @@ namespace Zeroconf
                     Debug.WriteLine($"IP: {addrString}, {(string.IsNullOrEmpty(name) ? string.Empty : $"Name: {name}, ")}Bytes: {buffer.Length}, IsResponse: {resp.header.QR}");
 
                     if (resp.header.QR)
-                    {   var key = $"{addrString}{(string.IsNullOrEmpty(name) ? "" : $": {name}")}";
+                    {
+                        var key = $"{addrString}{(string.IsNullOrEmpty(name) ? "" : $": {name}")}";
                         lock (dict)
                         {
                             dict[key] = resp;
@@ -58,28 +58,59 @@ namespace Zeroconf
 
                 Debug.WriteLine($"Looking for {string.Join(", ", options.Protocols)} with scantime {options.ScanTime}");
 
-                await NetworkInterface.NetworkRequestAsync(requestBytes,
-                                                           options.ScanTime,
-                                                           options.Retries,
-                                                           (int)options.RetryDelay.TotalMilliseconds,
-                                                           Converter,                                                           
-                                                           cancellationToken)
-                                      .ConfigureAwait(false);
+                if (options.Adapter != null)
+                {
+                    await NetworkInterface.NetworkRequestAsync(requestBytes,
+                                           options.ScanTime,
+                                           options.Retries,
+                                           (int)options.RetryDelay.TotalMilliseconds,
+                                           Converter,
+                                           options.Adapter,
+                                           cancellationToken)
+                      .ConfigureAwait(false);
+                }
+                else
+                {
+                    await NetworkInterface.NetworkRequestAsync(requestBytes,
+                                           options.ScanTime,
+                                           options.Retries,
+                                           (int)options.RetryDelay.TotalMilliseconds,
+                                           Converter,
+                                           cancellationToken)
+                      .ConfigureAwait(false);
+                }
 
                 return dict;
+            }
+        }
+
+        static QType ScanQueryToQType(ScanQueryType t)
+        {
+            switch (t)
+            {
+                case ScanQueryType.Ptr:
+                    return QType.PTR;
+                case ScanQueryType.Srv:
+                    return QType.SRV;
+                case ScanQueryType.Txt:
+                    return QType.TXT;
+                default:
+                    return QType.ANY;
             }
         }
 
         static byte[] GetRequestBytes(ZeroconfOptions options)
         {
             var req = new Request();
-            var queryType = options.ScanQueryType == ScanQueryType.Ptr ? QType.PTR : QType.ANY;
+            var classType = options.ScanClassType == ScanClassType.In ? QClass.IN : QClass.ANY;
 
             foreach (var protocol in options.Protocols)
             {
-                var question = new Question(protocol, queryType, QClass.IN);
-
-                req.AddQuestion(question);
+                foreach (var queryType in options.ScanQueryTypes)
+                {
+                    var question = new Question(protocol, ScanQueryToQType(queryType), classType);
+                    req.AddQuestion(question);
+                }
             }
 
             return req.Data;
@@ -97,66 +128,80 @@ namespace Zeroconf
                                                       .OfType<RecordA>())
                                       .Select(aRecord => aRecord.Address)
                                       .Distinct()
-                                      .ToList()
+                                      .ToList(),
             };
 
             z.Id = z.IPAddresses.FirstOrDefault() ?? remoteAddress;
-            
+
             var dispNameSet = false;
-           
+
             foreach (var ptrRec in response.RecordsPTR)
             {
+                z.AddDomainName(ptrRec.PTRDNAME);
+
                 // set the display name if needed
                 if (!dispNameSet)
                 {
                     z.DisplayName = ptrRec.PTRDNAME.Split('.')[0];
                     dispNameSet = true;
                 }
+            }
 
-                // Get the matching service records
-                var responseRecords = response.RecordsRR
-                                             .Where(r => r.NAME == ptrRec.PTRDNAME)
-                                             .Select(r => r.RECORD)
-                                             .ToList();
-
-                var srvRec = responseRecords.OfType<RecordSRV>().FirstOrDefault();
-                if (srvRec == null)
-                    continue; // Missing the SRV record, not valid
-
+            if (response.RecordsRR.Where(x => x.Type == Heijden.DNS.Type.SRV).FirstOrDefault()?.RECORD is RecordSRV srvRec)
+            {
                 var svc = new Service
                 {
-                    Name = ptrRec.RR.NAME,
+                    Name = srvRec.RR.NAME,
                     Port = srvRec.PORT,
                     Ttl = (int)srvRec.RR.TTL,
-
                 };
 
-                // There may be 0 or more text records - property sets
-                foreach (var txtRec in responseRecords.OfType<RecordTXT>())
+                z.AddDomainName(srvRec.RR.NAME);
+
+                if (!dispNameSet)
                 {
-                    var set = new Dictionary<string, string>();
-                    foreach (var txt in txtRec.TXT)
-                    {
-                        var split = txt.Split(new[] {'='}, 2);
-                        if (split.Length == 1)
-                        {
-                            if (!string.IsNullOrWhiteSpace(split[0]))
-                                set[split[0]] = null;
-                        }
-                        else
-                        {
-                            set[split[0]] = split[1];
-                        }
-                    }
-                    svc.AddPropertySet(set);
+                    z.DisplayName = srvRec.RR.NAME.Split('.')[0];
+                    dispNameSet = true;
                 }
 
                 z.AddService(svc);
             }
 
+            if (response.RecordsRR.Where(x => x.Type == Heijden.DNS.Type.TXT).FirstOrDefault()?.RECORD is RecordTXT txtRec)
+            {
+
+                var txr = new TextRecord
+                {
+                    Name = txtRec.RR.NAME,
+                    Ttl = (int)txtRec.RR.TTL,
+                };
+
+                z.AddDomainName(txtRec.RR.NAME);
+
+                if (!dispNameSet)
+                {
+                    z.DisplayName = txtRec.RR.NAME.Split('.')[0];
+                    dispNameSet = true;
+                }
+
+                foreach (var txt in txtRec.TXT)
+                {
+                    var split = txt.Split(new[] { '=' }, 2);
+                    if (split.Length == 1)
+                    {
+                        if (!string.IsNullOrWhiteSpace(split[0]))
+                            txr.AddProperty(split[0], null);
+                    }
+                    else
+                    {
+                        txr.AddProperty(split[0], split[1].TrimEnd(new[] { '\0' }));
+                    }
+                }
+
+                z.AddTextRecord(txr);
+            }
+
             return z;
         }
-
-
     }
 }
